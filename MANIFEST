@@ -1,7 +1,6 @@
 .gitignore
 Changes
 ex/sample.pl
-ignore.txt
 inc/Module/AutoInstall.pm
 inc/Module/Install.pm
 inc/Module/Install/AutoInstall.pm

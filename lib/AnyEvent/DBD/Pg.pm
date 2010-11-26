@@ -24,7 +24,7 @@ our $VERSION = '0.01';
 
 	use AnyEvent::DBD::Pg;
 	
-	my $adb = AnyEvent::DBD::Pg->new('dbi:Pg:dbname=comments;host=db2.rambler.ru;port=6000;', comments => 'Ieigfyxbr', {
+	my $adb = AnyEvent::DBD::Pg->new('dbi:Pg:dbname=test', user => 'pass', {
 		pg_enable_utf8 => 1,
 		pg_server_prepare => 0,
 		quote_char => '"',
