@@ -18,7 +18,7 @@ AnyEvent::DBD::Pg - AnyEvent interface to DBD::Pg's async interface
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 =head1 SYNOPSIS
 

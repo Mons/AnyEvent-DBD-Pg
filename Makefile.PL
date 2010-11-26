@@ -6,6 +6,7 @@ author   q{Mons Anderson <mons@cpan.org>};
 license  'perl';
 
 build_requires 'Test::More';
+build_requires 'lib::abs';
 
 requires 'common::sense',3;
 requires 'AnyEvent',5;

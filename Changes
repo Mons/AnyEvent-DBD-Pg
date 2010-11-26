@@ -1,5 +1,8 @@
 Revision history for AnyEvent-DBI-Pg
 
-0.01    Date/time
+0.02    2010-11-27
+        Fix tests
+
+0.01    2010-11-27
         First version, released on an unsuspecting world.
 
