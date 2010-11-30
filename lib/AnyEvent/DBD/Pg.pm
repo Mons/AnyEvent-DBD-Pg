@@ -1,6 +1,6 @@
 package AnyEvent::DBD::Pg;
 
-use 5.010;
+use 5.008008; # don't use old crap without utf8
 use common::sense 3;m{
 	use strict;
 	use warnings;
@@ -18,7 +18,7 @@ AnyEvent::DBD::Pg - AnyEvent interface to DBD::Pg's async interface
 
 =cut
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 =head1 SYNOPSIS
 
