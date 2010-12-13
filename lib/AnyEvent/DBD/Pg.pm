@@ -18,7 +18,7 @@ AnyEvent::DBD::Pg - AnyEvent interface to DBD::Pg's async interface
 
 =cut
 
-our $VERSION = '0.03';
+our $VERSION = '0.03_01'; $VERSION = eval($VERSION);
 
 =head1 SYNOPSIS
 
@@ -81,7 +81,8 @@ sub new {
 	$args ||= {};
 	my $self = bless {@args},$pkg;
 	$self->{cnn} = [$dsn,$user,$pass,$args];
-	$self->{queue_size} = 2;
+	$self->{id} = sprintf '%08x', int $self unless defined $self->{id};
+	$self->{queue_size} = 2 unless defined $self->{queue_size};
 	$self->{queue} = [];
 	#$self->{current};
 	#$self->connect;
@@ -163,21 +164,39 @@ sub _dequeue {
 	$self->$method(@$next);
 }
 
+sub begin_work {
+	my $self = shift;
+	my $cb = pop;
+	$self->execute("begin",$cb);
+}
+
+sub commit {
+	my $self = shift;
+	my $cb = pop || sub {};
+	$self->execute("commit",$cb);
+}
+
+sub rollback {
+	my $self = shift;
+	my $cb = pop || sub {};
+	$self->execute("rollback",$cb);
+}
+
 our $AUTOLOAD;
 sub  AUTOLOAD {
 	my ($method) = $AUTOLOAD =~ /([^:]+)$/;
 	my $self = shift;
-	die sprintf qq{Can't locate autoloaded object method "%s" (%s) via package "%s" at %s line %s.\n}, $method, $AUTOLOAD, ref $self, (caller)[1,2]
+	die sprintf qq{Can't locate autoloaded object method "%s" (%s) via package "%s" at %s line %s.\n}, $method, $AUTOLOAD, ref $self, (caller)[1,2] # '
 		unless exists $METHOD{$method};
 	my $fetchmethod = $METHOD{$method};
 	defined $fetchmethod or croak "Method $method not implemented yet";
 	ref (my $cb = pop) eq 'CODE' or croak "need callback";
 	if ($self->{db}->{pg_async_status} == 1 or $self->{current} ) {
-		if ( @{ $self->{queue} } >= $self->{queue_size} - 1 ) {
+		if ( $self->{queue_size} > 0 and @{ $self->{queue} } > $self->{queue_size} - 1 ) {
 			my $c = 1;
 			my $counter = ++$self->{querynum};
 			local $@ = "Query $_[0] run out of queue size $self->{queue_size}";
-			printf STDERR "\e[036;1mQ$counter\e[0m. [\e[03${c};1m%0.4fs\e[0m] < \e[03${c};1m%s\e[0m > ".("\e[031;1mQuery run out of queue size\e[0m")."\n", 0 , $_[0];
+			printf STDERR "\e[036;1m$self->{id}/Q$counter\e[0m. [\e[03${c};1m%0.4fs\e[0m] < \e[03${c};1m%s\e[0m > ".("\e[031;1mQuery run out of queue size $self->{queue_size}\e[0m")."\n", 0 , $_[0];
 			return $cb->();
 		} else {
 			warn "Query $_[0] pushed to queue\n" if $self->{debug} > 1;
@@ -193,13 +212,13 @@ sub  AUTOLOAD {
 	$self->{current} = [$query,@_];
 	$self->{current_start} = time();
 	
-	weaken $self;
-	$self or return;
+	#weaken $self;
+	$self or warn("self was destroyed"),return;
 	my ($st,$w,$t,$check);
 	my @watchers;
 	push @watchers, sub {
 		$self and $st or warn("no self"), @watchers = (), return 1;
-		#warn "check status=$self->{db}->{pg_async_status}\n";
+		warn "check status=$self->{db}->{pg_async_status}\n";
 		if($self->{db}->{pg_async_status} and $st->pg_ready()) {
 			undef $w;
 			local $@;
@@ -222,7 +241,7 @@ sub  AUTOLOAD {
 			if ($self->{debug}) {
 				my $c = $run < 0.01 ? '2' : $run < 0.1 ? '3' : '1';
 				my $x = $DIE ? '1' : '6';
-				printf STDERR "\e[036;1mQ$counter\e[0m. [\e[03${c};1m%0.4fs\e[0m] < \e[03${x};1m%s\e[0m > ".($DIE ? "\e[031;1m$DIE\e[0m" : '')."\n", $run , $diag;
+				printf STDERR "\e[036;1m$self->{id}/Q$counter\e[0m. [\e[03${c};1m%0.4fs\e[0m] < \e[03${x};1m%s\e[0m > ".($DIE ? "\e[031;1m$DIE\e[0m" : '')."\n", $run , $diag;
 			}
 			local $self->{queuing} = @{ $self->{queue} };
 			if ($res) {
