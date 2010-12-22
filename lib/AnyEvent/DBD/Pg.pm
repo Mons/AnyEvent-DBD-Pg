@@ -18,7 +18,7 @@ AnyEvent::DBD::Pg - AnyEvent interface to DBD::Pg's async interface
 
 =cut
 
-our $VERSION = '0.03_01'; $VERSION = eval($VERSION);
+our $VERSION = '0.03_02'; $VERSION = eval($VERSION);
 
 =head1 SYNOPSIS
 
@@ -114,6 +114,7 @@ sub connect {
 	close $fn2;
 	close $fn3;
 	if( $self->{db} = DBI->connect($dsn,$user,$pass,$args) ) {
+		warn "connect $dsn $user {@{[ %$args  ]}} successful ";
 		open my $fn3, '>','/dev/null';
 		if (fileno $fn3 == $next) {
 			$self->{fh} = $candidate;
@@ -126,6 +127,7 @@ sub connect {
 		$self->{gone} = undef;
 		return $self->{db}->ping;
 	} else {
+		warn "connect $dsn $user {@{[ %$args  ]}} failed ";
 		$self->{gone} = time unless defined $self->{gone};
 		$self->{lasttry} = time;
 		warn "Connection to $dsn failed: ".DBI->errstr;
@@ -137,7 +139,10 @@ our %METHOD = (
 	selectrow_array    => 'fetchrow_array',
 	selectrow_arrayref => 'fetchrow_arrayref',
 	selectrow_hashref  => 'fetchrow_hashref',
-	selectall_arrayref => 'fetchall_arrayref',
+	selectall_arrayref => sub {
+		my ($st,$args) = @_;
+		$st->fetchall_arrayref($args->{Slice});
+	}, #'fetchall_arrayref',
 	selectall_hashref  => 'fetchall_hashref',
 	selectcol_arrayref => sub {
 		my ($st,$args) = @_;
@@ -218,7 +223,6 @@ sub  AUTOLOAD {
 	my @watchers;
 	push @watchers, sub {
 		$self and $st or warn("no self"), @watchers = (), return 1;
-		warn "check status=$self->{db}->{pg_async_status}\n";
 		if($self->{db}->{pg_async_status} and $st->pg_ready()) {
 			undef $w;
 			local $@;

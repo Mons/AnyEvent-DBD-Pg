@@ -79,7 +79,9 @@ sub queue_size {
 
 sub connect {
 	my $self = shift;
-	$_->connect(@_) for @{ $self->{pool} };
+	my $success = 1;
+	$success &&= $_->connect(@_) for @{ $self->{pool} };
+	$success;
 }
 
 our $AUTOLOAD;

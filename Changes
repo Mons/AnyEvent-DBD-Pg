@@ -1,5 +1,9 @@
 Revision history for AnyEvent-DBI-Pg
 
+0.03_02 2010-12-22
+        - Fix pool connect status
+        - Fix selectall_arrayref Slice option
+
 0.03    2010-11-30
         - Fix tests (remove NoWarnings)
         - Lower perl version requirement
