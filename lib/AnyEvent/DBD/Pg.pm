@@ -128,6 +128,7 @@ sub connect {
 		return $self->{db}->ping;
 	} else {
 		warn "connect $dsn $user {@{[ %$args  ]}} failed ";
+		$self->{error} = DBI->errstr;
 		$self->{gone} = time unless defined $self->{gone};
 		$self->{lasttry} = time;
 		warn "Connection to $dsn failed: ".DBI->errstr;
@@ -196,6 +197,9 @@ sub  AUTOLOAD {
 	my $fetchmethod = $METHOD{$method};
 	defined $fetchmethod or croak "Method $method not implemented yet";
 	ref (my $cb = pop) eq 'CODE' or croak "need callback";
+	
+	$self->{db} or $self->connect or return do{ local $@ = $self->{error};$cb->() };
+	
 	if ($self->{db}->{pg_async_status} == 1 or $self->{current} ) {
 		if ( $self->{queue_size} > 0 and @{ $self->{queue} } > $self->{queue_size} - 1 ) {
 			my $c = 1;

@@ -24,7 +24,7 @@ no_index:
 provides:
   AnyEvent::DBD::Pg:
     file: lib/AnyEvent/DBD/Pg.pm
-    version: 0.03
+    version: 0.0302
 requires:
   AnyEvent: 5
   DBD::Pg: 0
@@ -34,4 +34,4 @@ requires:
   perl: 5.8.8
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.03
+version: 0.0302

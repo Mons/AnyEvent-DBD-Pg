@@ -59,7 +59,6 @@ sub new {
 	my $self = bless {}, $pkg;
 	my ($dsn,$user,$pass,$args,@args) = @_;
 	$args ||= {};
-	warn "cnn @_";
 	$self->{pool} = [
 		map { AnyEvent::DBD::Pg->new($dsn,$user,$pass,$args,@args,id => $_) } 1..$count
 	];
