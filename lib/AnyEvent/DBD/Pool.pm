@@ -39,12 +39,15 @@ sub  AUTOLOAD {
 	$self->{db}->$method(@_);
 	return;
 	unshift @_, $self->{db};
-	eval{ goto &{ $self->{db}->can($method) } } or die "$method: $@";
+	goto &{ $self->{db}->can($method) };
+	#local $@;eval{ goto &{ $self->{db}->can($method) } } or die "$method: $@";
 }
 
 sub DESTROY {
 	my $self = shift;
-	$self->{des}->($self);
+	local $@;eval {
+		$self->{des}->($self);
+	1} or warn "$self/DESTROY: $@";
 	return;
 }
 
@@ -83,6 +86,7 @@ sub connect {
 	$success;
 }
 
+sub DESTROY {}
 our $AUTOLOAD;
 sub  AUTOLOAD {
 	my $self = shift;

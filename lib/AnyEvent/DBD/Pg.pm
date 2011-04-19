@@ -98,6 +98,22 @@ BEGIN {
 	}
 }
 
+sub callcb($$@) {
+	my ($cb,$err,@args) = @_;
+	my $e;
+	my $wa = wantarray;
+	my ($rc,@rc);
+	{
+		local $@;
+		eval {
+			$@ = $err;
+			$wa ? @rc = $cb->(@args) : $rc = $cb->(@args);
+		1 } or $e = $@;
+	}
+	die $e if defined $e;
+	$wa ? @rc : $rc;
+}
+
 sub connect {
 	my $self = shift;
 	my ($dsn,$user,$pass,$args) = @{ $self->{cnn} };
@@ -114,7 +130,7 @@ sub connect {
 	close $fn2;
 	close $fn3;
 	if( $self->{db} = DBI->connect($dsn,$user,$pass,$args) ) {
-		warn "connect $dsn $user {@{[ %$args  ]}} successful ";
+		#warn "connect $dsn $user {@{[ %$args  ]}} successful ";
 		open my $fn3, '>','/dev/null';
 		if (fileno $fn3 == $next) {
 			$self->{fh} = $candidate;
@@ -198,15 +214,14 @@ sub  AUTOLOAD {
 	defined $fetchmethod or croak "Method $method not implemented yet";
 	ref (my $cb = pop) eq 'CODE' or croak "need callback";
 	
-	$self->{db} or $self->connect or return do{ local $@ = $self->{error};$cb->() };
+	$self->{db} or $self->connect or return callcb( $cb,$self->{error} );
 	
 	if ($self->{db}->{pg_async_status} == 1 or $self->{current} ) {
 		if ( $self->{queue_size} > 0 and @{ $self->{queue} } > $self->{queue_size} - 1 ) {
 			my $c = 1;
 			my $counter = ++$self->{querynum};
-			local $@ = "Query $_[0] run out of queue size $self->{queue_size}";
 			printf STDERR "\e[036;1m$self->{id}/Q$counter\e[0m. [\e[03${c};1m%0.4fs\e[0m] < \e[03${c};1m%s\e[0m > ".("\e[031;1mQuery run out of queue size $self->{queue_size}\e[0m")."\n", 0 , $_[0];
-			return $cb->();
+			return callcb( $cb, "Query $_[0] run out of queue size $self->{queue_size}" );
 		} else {
 			warn "Query $_[0] pushed to queue\n" if $self->{debug} > 1;
 			push @{ $self->{queue} }, [time(), $method, @_,$cb];
@@ -227,10 +242,23 @@ sub  AUTOLOAD {
 	my @watchers;
 	push @watchers, sub {
 		$self and $st or warn("no self"), @watchers = (), return 1;
-		if($self->{db}->{pg_async_status} and $st->pg_ready()) {
+		my $rs;
+		{
+			#local $SIG{__WARN__} = sub {
+			#	warn "$query.pg_ready : @_";
+			#};
+			$rs = $self->{db}->{pg_async_status} and $st->pg_ready();
+		}
+		
+		if ($rs) {
 			undef $w;
-			local $@;
-			my $res = $st->pg_result;
+			my $res;
+			{
+				#local $SIG{__WARN__} = sub {
+				#	warn "$query.pg_result : @_";
+				#};
+				$res = $st->pg_result;
+			}
 			my $run = time - $self->{current_start};
 			$self->{querytime} += $run;
 			my ($diag,$DIE);
@@ -253,6 +281,8 @@ sub  AUTOLOAD {
 			}
 			local $self->{queuing} = @{ $self->{queue} };
 			if ($res) {
+				undef $@;
+				#local $@;eval {
 				if (ref $fetchmethod) {
 					$cb->($res, $st->$fetchmethod($args));
 				} else {
@@ -263,15 +293,16 @@ sub  AUTOLOAD {
 					# $self->_dequeue();
 					# $cb->($res, @res);
 				}
+				#1} or do { warn "call callback failed: $@"; die $@; };
 				undef $st;
 				undef $self->{current};
 				$self->_dequeue();
 				@watchers = ();
 			} else {
-				local $@ = $DIE;
-				#warn "st failed: $@";
+				#local $@ = $DIE;
+				#warn "st failed: $DIE";
 				$st->finish;
-				$cb->();
+				callcb($cb,$DIE);
 				undef $st;
 				undef $self->{current};
 				@watchers = ();
@@ -288,9 +319,9 @@ sub  AUTOLOAD {
 			undef $st;
 			@watchers = ();
 			
-			local $@ = $self->{db}->errstr;
-			warn;
-			$cb->();
+			#local $@ = $self->{db}->errstr;
+			warn $self->{db}->errstr;
+			callcb($cb, $self->{db}->errstr);
 			
 			$self->_dequeue;
 		};
