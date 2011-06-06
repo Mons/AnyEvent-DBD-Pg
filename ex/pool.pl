@@ -4,7 +4,7 @@
 	
 	use AnyEvent::DBD::Pool;
 	
-	my $adb = AnyEvent::DBD::Pool->new(3, 'dbi:Pg:dbname=bot', bot => '', {
+	my $adb = AnyEvent::DBD::Pool->new(3, 'dbi:Pg:dbname=test;', user => '', {
 		pg_enable_utf8 => 1,
 		pg_server_prepare => 0,
 		quote_char => '"',

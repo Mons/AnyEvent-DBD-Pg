@@ -4,7 +4,7 @@
 	
 	use AnyEvent::DBD::Pg;
 	
-	my $adb = AnyEvent::DBD::Pg->new('dbi:Pg:dbname=test', user => 'pass', {
+	my $adb = AnyEvent::DBD::Pg->new('dbi:Pg:dbname=test', user => '', {
 		pg_enable_utf8 => 1,
 		pg_server_prepare => 0,
 		quote_char => '"',

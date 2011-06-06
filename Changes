@@ -1,5 +1,8 @@
 Revision history for AnyEvent-DBI-Pg
 
+0.03_02 2011-05-10
+        - No more socket fileno detection, use pg_socket! (Thanks to Ruslan Zakirov)
+
 0.03_02 2010-12-22
         - Fix pool connect status
         - Fix selectall_arrayref Slice option

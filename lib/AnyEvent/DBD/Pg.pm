@@ -18,7 +18,7 @@ AnyEvent::DBD::Pg - AnyEvent interface to DBD::Pg's async interface
 
 =cut
 
-our $VERSION = '0.03_02'; $VERSION = eval($VERSION);
+our $VERSION = '0.03_03'; $VERSION = eval($VERSION);
 
 =head1 SYNOPSIS
 
@@ -120,30 +120,15 @@ sub connect {
 	local $args->{RaiseError} = 0;
 	local $args->{PrintError} = 0;
 	
-	# TODO: it we have opened, for ex, 1,3,5 fds, then we got 2 for f1, 4 for dbi, 6 for f2, which is wrong;
-	
-	open my $fn1, '>','/dev/null';
-	open my $fn2, '>','/dev/null';
-	open my $fn3, '>','/dev/null';
-	my $candidate = fileno($fn2);
-	my $next = fileno($fn3);
-	close $fn2;
-	close $fn3;
 	if( $self->{db} = DBI->connect($dsn,$user,$pass,$args) ) {
 		#warn "connect $dsn $user {@{[ %$args  ]}} successful ";
-		open my $fn3, '>','/dev/null';
-		if (fileno $fn3 == $next) {
-			$self->{fh} = $candidate;
-		} else {
-			die sprintf "Bad descriptor definition implementation: got too many fds: [ %d -> %d -> %d <> %d -> ? -> %d ]\n",
-				fileno($fn1), $candidate,$next, fileno($fn3);
-		}
+		$self->{fh} = $self->{db}->{pg_socket} + 0;
 		warn "Connection to $dsn established\n" if $self->{debug} > 2;
 		$self->{lasttry} = undef;
 		$self->{gone} = undef;
 		return $self->{db}->ping;
 	} else {
-		warn "connect $dsn $user {@{[ %$args  ]}} failed ";
+		#warn "connect $dsn $user {@{[ %$args  ]}} failed ";
 		$self->{error} = DBI->errstr;
 		$self->{gone} = time unless defined $self->{gone};
 		$self->{lasttry} = time;
@@ -172,8 +157,11 @@ sub DESTROY {}
 
 sub _dequeue {
 	my $self = shift;
-	if ($self->{db}->{pg_async_status} == 1 ) {
-		warn "Can't dequeue, while processing query ($self->{current}[0])";
+	if ($self->{db}->{pg_async_status} == 1 ) {	
+		warn "Can't dequeue (), while processing query ($self->{current}[0]) by @{[ (caller)[1,2] ]}";
+		if ( @{ $self->{queue} } ) {
+			warn "\tHave queue $self->{queue}[0][1]  $self->{queue}[0][2]";
+		}
 		return;
 	}
 	#warn "Run dequeue with status=$self->{db}->{pg_async_status}";
@@ -223,7 +211,7 @@ sub  AUTOLOAD {
 			printf STDERR "\e[036;1m$self->{id}/Q$counter\e[0m. [\e[03${c};1m%0.4fs\e[0m] < \e[03${c};1m%s\e[0m > ".("\e[031;1mQuery run out of queue size $self->{queue_size}\e[0m")."\n", 0 , $_[0];
 			return callcb( $cb, "Query $_[0] run out of queue size $self->{queue_size}" );
 		} else {
-			warn "Query $_[0] pushed to queue\n" if $self->{debug} > 1;
+			warn "Query $_[0] pushed to queue because of ".( $self->{db}->{pg_async_status} == 1 ? 'async_status' : "current=$self->{current}" )."\n" if $self->{debug} > 1;
 			push @{ $self->{queue} }, [time(), $method, @_,$cb];
 			return;
 		}
@@ -242,21 +230,22 @@ sub  AUTOLOAD {
 	my @watchers;
 	push @watchers, sub {
 		$self and $st or warn("no self"), @watchers = (), return 1;
+		#warn time()." Callback $self->{db}->{pg_async_status} / ".$st->pg_ready();
 		my $rs;
 		{
-			#local $SIG{__WARN__} = sub {
-			#	warn "$query.pg_ready : @_";
-			#};
-			$rs = $self->{db}->{pg_async_status} and $st->pg_ready();
+			local $SIG{__WARN__} = sub {
+				warn "$self->{id}: $query.pg_ready : @_";
+			};
+			$rs = $self->{db}->{pg_async_status} && $st->pg_ready();
 		}
 		
 		if ($rs) {
 			undef $w;
 			my $res;
 			{
-				#local $SIG{__WARN__} = sub {
-				#	warn "$query.pg_result : @_";
-				#};
+				local $SIG{__WARN__} = sub {
+					warn "$self->{id}: $query.pg_result : @_";
+				};
 				$res = $st->pg_result;
 			}
 			my $run = time - $self->{current_start};
@@ -313,6 +302,41 @@ sub  AUTOLOAD {
 		return 0;
 		#undef $w;
 	};
+	if (0 and $query =~ /^\s*begin(?:_work|)\s*$/i) {
+		my $rc = eval { $self->{db}->begin_work;1 };
+		$rc or warn;
+		
+			my ($diag,$DIE);
+			if (!$rc) {
+				$DIE = $@;
+			}
+			if ($self->{debug}) {
+				$diag = $self->{current}[0];
+				my @bind = @{ $self->{current} };
+				shift @bind;
+				$diag =~ s{\?}{ "'".shift(@bind)."'" }sge;
+			} else {
+				$diag = $self->{current}[0];
+			}
+			local $self->{qd} = $diag;
+			if ($self->{debug}) {
+				my $c = 2;
+				my $x = $DIE ? '1' : '6';
+				printf STDERR "\e[036;1m$self->{id}/Q$counter\e[0m. [\e[03${c};1m%0.4fs\e[0m] < \e[03${x};1m%s\e[0m > ".($DIE ? "\e[031;1m$DIE\e[0m" : '')."\n", 0 , $diag;
+			}
+		
+		undef $self->{current};
+		if($rc) {
+			$cb->( '0E0' );
+		} else {
+			$cb->();
+		}
+		$self->_dequeue if @{ $self->{queue} };
+		return;
+	}
+	
+	use Time::HiRes 'time';
+	#warn time()." call query $query";
 	$st = $self->{db}->prepare($query,$args)
 		and $st->execute(@_) 
 		or return do{
@@ -325,6 +349,7 @@ sub  AUTOLOAD {
 			
 			$self->_dequeue;
 		};
+	#warn time()." call query $query done";
 	# At all we don't need timers for the work, but if we have some bugs, it will help us to find them
 	push @watchers, AE::timer 1,1, $watchers[0];
 	push @watchers, AE::io $self->{fh}, 0, $watchers[0];
@@ -369,6 +394,14 @@ Execute PG_ASYNC prepare, than push result of C<fetchall_hashref($args{Columns})
 Execute PG_ASYNC prepare, than invoke callback, pushing resulting sth to it.
 
 B<Please, note>: result already passed as first argument
+
+=back
+
+=head1 THANKS
+
+=over 4
+
+=item * Thanks to Ruslan Zakirov C<< <ruz@bestpractical.com> >> for hint about pg_socket option
 
 =back
 
