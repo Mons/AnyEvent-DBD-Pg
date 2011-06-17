@@ -62,8 +62,17 @@ sub new {
 	my $self = bless {}, $pkg;
 	my ($dsn,$user,$pass,$args,@args) = @_;
 	$args ||= {};
+	
+	my $ctor;
+	if (@args and ref $args[0] eq 'CODE') {
+		$ctor = shift @args;
+	} else {
+		$ctor = sub {
+			AnyEvent::DBD::Pg->new(@_);
+		};
+	}
 	$self->{pool} = [
-		map { AnyEvent::DBD::Pg->new($dsn,$user,$pass,$args,@args,id => $_) } 1..$count
+		map { $ctor->( $dsn,$user,$pass,$args,@args,id => $_[0] ); } 1..$count
 	];
 	$self->{waiting_db} = [];
 	return $self;
