@@ -67,8 +67,12 @@ sub new {
 	if (@args and ref $args[0] eq 'CODE') {
 		$ctor = shift @args;
 	} else {
+		warn "dsn = $dsn";
+		my ($type) = $dsn =~ /^dbi:([^:]+):/;
+		my $class = "AnyEvent::DBD::".$type;
+		eval "require $class; 1" or die $@;
 		$ctor = sub {
-			AnyEvent::DBD::Pg->new(@_);
+			$class->new(@_);
 		};
 	}
 	$self->{pool} = [
