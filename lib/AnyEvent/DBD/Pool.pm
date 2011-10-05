@@ -24,27 +24,31 @@ sub new {
 sub commit {
 	my $self = shift;
 	$self->{commited} = 1;
-	$self->{db}->commit(@_);
+	#warn "call commit on $self->{db}";
+	$self->{db}->commit(@_ ? @_ : sub {});
 }
 sub rollback {
 	my $self = shift;
 	$self->{commited} = -1;
-	$self->{db}->rollback(@_);
+	#warn "call rollback on $self->{db}";
+	$self->{db}->rollback(@_ ? @_ : sub {});
 }
 
 our $AUTOLOAD;
 sub  AUTOLOAD {
 	my $self = shift;
 	my ($method) = $AUTOLOAD =~ /([^:]+)$/;
+	#warn "Call $method on db";
 	$self->{db}->$method(@_);
 	return;
-	unshift @_, $self->{db};
-	goto &{ $self->{db}->can($method) };
-	#local $@;eval{ goto &{ $self->{db}->can($method) } } or die "$method: $@";
+	#unshift @_, $self->{db};
+	#goto &{ $self->{db}->can($method) };
+
 }
 
 sub DESTROY {
 	my $self = shift;
+	#warn "DESTROY tx";
 	local $@;eval {
 		$self->{des}->($self);
 	1} or warn "$self/DESTROY: $@";
@@ -67,7 +71,7 @@ sub new {
 	if (@args and ref $args[0] eq 'CODE') {
 		$ctor = shift @args;
 	} else {
-		warn "dsn = $dsn";
+		#warn "dsn = $dsn";
 		my ($type) = $dsn =~ /^dbi:([^:]+):/;
 		my $class = "AnyEvent::DBD::".$type;
 		eval "require $class; 1" or die $@;
@@ -128,6 +132,7 @@ sub txn {
 					$self->ret($db);
 				} else {
 					my $call = $args{default};
+					#warn "default commit";
 					$db->$call(sub{
 						shift or warn;
 						$self->ret($db);
@@ -143,13 +148,13 @@ sub txn {
 sub take {
 	my $self = shift;
 	my $cb = shift or die "cb required for take at @{[(caller)[1,2]]}\n";
-	#warn("take wrk, left ".$#{$self->{pool}}." for @{[(caller)[1,2]]}\n");
+	#warn("take wrk, left ".$#{$self->{pool}}."\n");
 	if (@{$self->{pool}}) {
 		my $db = shift @{$self->{pool}};
 		$db->{_return_to_me} = $self;
 		$cb->($db);
 	} else {
-		#warn("no worker for @{[(caller 1)[1,2]]}, maybe increase pool?");
+		warn("no worker for @{[(caller 1)[1,2]]}, maybe increase pool?");
 		push @{$self->{waiting_db}},$cb
 	}
 }
@@ -158,6 +163,7 @@ sub ret {
 	my $self = shift;
 	delete $_->{_return_to_me} for @_;
 	push @{ $self->{pool} }, @_;
+	#warn("ret wrk, left ".$#{$self->{pool}}."; waiting=".(0+@{ $self->{waiting_db} })."\n");
 	$self->take(shift @{ $self->{waiting_db} }) if @{ $self->{waiting_db} };
 }
 
