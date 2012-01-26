@@ -79,6 +79,7 @@ sub new {
 			$class->new(@_);
 		};
 	}
+	$self->{pool_size} = $count;
 	$self->{pool} = [
 		map { $ctor->( $dsn,$user,$pass,$args,@args,id => $_[0] ); } 1..$count
 	];
@@ -154,8 +155,10 @@ sub take {
 		$db->{_return_to_me} = $self;
 		$cb->($db);
 	} else {
-		warn("no worker for @{[(caller 1)[1,2]]}, maybe increase pool?");
-		push @{$self->{waiting_db}},$cb
+		push @{$self->{waiting_db}},$cb;
+		if ( @{$self->{waiting_db}} > $self->{pool_size} ) {
+			warn("no worker for @{[(caller 1)[1,2]]}, maybe increase pool (current penfing: @{[ 0+@{$self->{waiting_db}} ]})?");
+		}
 	}
 }
 
