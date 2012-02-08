@@ -1,5 +1,10 @@
 Revision history for AnyEvent-DBI-Pg
 
+0.03_05 2012-02-08
+        - freedb method
+        - ping
+        - remove noisy warnings about request queue
+
 0.03_04 2011-06-17
         - Modifications to use Pool with AE::DBI
 

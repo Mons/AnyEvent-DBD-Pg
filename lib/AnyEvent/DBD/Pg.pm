@@ -18,7 +18,7 @@ AnyEvent::DBD::Pg - AnyEvent interface to DBD::Pg's async interface
 
 =cut
 
-our $VERSION = '0.03_04'; $VERSION = eval($VERSION);
+our $VERSION = '0.03_05'; $VERSION = eval($VERSION);
 
 =head1 SYNOPSIS
 
@@ -114,6 +114,13 @@ sub callcb($$@) {
 	$wa ? @rc : $rc;
 }
 
+sub _set_ka_timer {
+	my $self = shift;
+	$self->{ka} = AE::timer 30,30, sub {
+		
+	};
+}
+
 sub connect {
 	my $self = shift;
 	my ($dsn,$user,$pass,$args) = @{ $self->{cnn} };
@@ -123,7 +130,8 @@ sub connect {
 	if( $self->{db} = DBI->connect($dsn,$user,$pass,$args) ) {
 		#warn "connect $dsn $user {@{[ %$args  ]}} successful ";
 		$self->{fh} = $self->{db}->{pg_socket} + 0;
-		warn "Connection to $dsn established\n" if $self->{debug} > 2;
+		warn "Connection to $dsn established for pid $$\n" if $self->{debug} > 2;
+		$self->{pid} = $$;
 		$self->{lasttry} = undef;
 		$self->{gone} = undef;
 		return $self->{db}->ping;
@@ -174,6 +182,8 @@ sub _dequeue {
 	$self->$method(@$next);
 }
 
+sub ping { my $self = shift; $self->{db} && $self->{db}->ping }
+
 sub begin_work {
 	my $self = shift;
 	my $cb = pop;
@@ -202,6 +212,7 @@ sub  AUTOLOAD {
 	defined $fetchmethod or croak "Method $method not implemented yet";
 	ref (my $cb = pop) eq 'CODE' or croak "need callback";
 	
+	$self->{pid} == $$ or warn("reestablish connection to database because of pid change from $self->{pid} to $$"), $self->connect;
 	$self->{db} or $self->connect or return callcb( $cb,$self->{error} );
 	
 	if ($self->{db}->{pg_async_status} == 1 or $self->{current} ) {
@@ -337,15 +348,15 @@ sub  AUTOLOAD {
 	
 	use Time::HiRes 'time';
 	#warn time()." call query $query";
-	$st = $self->{db}->prepare($query,$args)
+	undef $@;
+	$st = eval { $self->{db}->prepare($query,$args) } # this could die with 'server closed the connection unexpectedly'
 		and $st->execute(@_) 
 		or return do{
 			undef $st;
 			@watchers = ();
-			
-			#local $@ = $self->{db}->errstr;
-			warn $self->{db}->errstr;
-			callcb($cb, $self->{db}->errstr);
+			my $err = defined $@ && $@ ? "$@" : $self->{db}->errstr;
+			warn "prepare/execute failed: $@/".$self->{db}->errstr. " = $err ";
+			callcb($cb, $err);
 			
 			$self->_dequeue;
 		};

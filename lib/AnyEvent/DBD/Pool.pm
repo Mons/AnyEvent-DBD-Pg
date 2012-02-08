@@ -103,6 +103,21 @@ sub connect {
 	$success;
 }
 
+sub freedb {
+	my $self = shift;
+	my $cb = pop;
+	# During this call we must prohibit free pool changing. so
+	$self->{take_delay} = \ my @take;
+	$self->{ret_delay} = \ my @ret;
+	for (@{ $self->{pool} }) {
+		$cb->($_);
+	}
+	delete $self->{take_delay};
+	delete $self->{ret_delay};
+	$self->ret(@ret);
+	$self->take($_) for @take;
+}
+
 sub DESTROY {}
 our $AUTOLOAD;
 sub  AUTOLOAD {
@@ -110,6 +125,7 @@ sub  AUTOLOAD {
 	my $cb = pop;
 	my @args = @_;
 	my ($method) = $AUTOLOAD =~ /([^:]+)$/;
+	warn "autoloaded $AUTOLOAD";
 	$self->take(sub {
 		my $con = shift;
 		$con->$method(@args,sub {
@@ -123,6 +139,7 @@ sub txn {
 	my $self = shift;
 	my $cb = pop;
 	my %args = (default => 'commit', @_);
+	my $ix = \0;
 	$self->take(sub {
 		my $db = shift;
 		$db->begin_work(sub {
@@ -149,6 +166,10 @@ sub take {
 	my $self = shift;
 	my $cb = shift or die "cb required for take at @{[(caller)[1,2]]}\n";
 	#warn("take wrk, left ".$#{$self->{pool}}."\n");
+	if ($self->{take_delay}) {
+		push @{ $self->{take_delay} }, $cb;
+		return;
+	}
 	if (@{$self->{pool}}) {
 		my $db = shift @{$self->{pool}};
 		$db->{_return_to_me} = $self;
@@ -157,14 +178,20 @@ sub take {
 		warn("no worker for @{[(caller 1)[1,2]]}, maybe increase pool?");
 		push @{$self->{waiting_db}},$cb
 	}
+	return;
 }
 
 sub ret {
 	my $self = shift;
+	if ($self->{ret_delay}) {
+		push @{ $self->{ret_delay} }, @_;
+		return;
+	}
 	delete $_->{_return_to_me} for @_;
 	push @{ $self->{pool} }, @_;
 	#warn("ret wrk, left ".$#{$self->{pool}}."; waiting=".(0+@{ $self->{waiting_db} })."\n");
 	$self->take(shift @{ $self->{waiting_db} }) if @{ $self->{waiting_db} };
+	return;
 }
 
 
